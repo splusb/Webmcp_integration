@@ -1,0 +1,28 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model TrackedContribution {
+  id        String   @id @default(cuid())
+  projectId String
+  issueId   String?
+  status    String   @default("interested")
+  notes     String?
+  targetDate String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model SkillProfile {
+  id               String   @id @default(cuid())
+  skills           String
+  interests        String?
+  experienceLevel  String   @default("beginner")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
