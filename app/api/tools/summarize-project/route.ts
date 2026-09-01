@@ -4,6 +4,7 @@ import { getRepository, getContributingGuide, getCommunityProfile } from "@/lib/
 export async function POST(req: NextRequest) {
   try {
     const input = await req.json();
+    console.log("[tool:summarize_project] executed with input:", JSON.stringify(input));
     const [owner, repo] = input.projectId.split("/");
 
     if (!owner || !repo) {

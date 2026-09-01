@@ -30,3 +30,4 @@ npm-debug.log*
 # prisma
 prisma/dev.db
 prisma/dev.db-journal
+tsconfig.tsbuildinfo

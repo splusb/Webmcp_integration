@@ -4,6 +4,7 @@ import { getIssueDetail, getRepository } from "@/lib/github";
 export async function POST(req: NextRequest) {
   try {
     const input = await req.json();
+    console.log("[tool:explain_issue] executed with input:", JSON.stringify(input));
     const [owner, repo] = input.projectId.split("/");
     const issueNumber = parseInt(input.issueId, 10);
 

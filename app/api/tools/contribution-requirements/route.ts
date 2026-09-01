@@ -4,6 +4,7 @@ import { getContributingGuide, getCommunityProfile, getRepository } from "@/lib/
 export async function POST(req: NextRequest) {
   try {
     const input = await req.json();
+    console.log("[tool:check_contribution_requirements] executed with input:", JSON.stringify(input));
     const [owner, repo] = input.projectId.split("/");
 
     if (!owner || !repo) {

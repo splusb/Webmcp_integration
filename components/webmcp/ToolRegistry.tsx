@@ -2,23 +2,25 @@
 
 import { useEffect } from "react";
 
-declare global {
-  interface Document {
-    modelContext?: {
-      registerTool: (tool: {
-        name: string;
-        description: string;
-        inputSchema: object;
-        execute: (input: any) => Promise<any>;
-      }) => void;
-    };
-  }
+interface WebMCPTool {
+  name: string;
+  description: string;
+  inputSchema: object;
+  execute: (input: any) => Promise<any>;
 }
+
+// The global `Document.modelContext` type lives in lib/webmcp.d.ts.
+
+// Module-level guard: React Strict Mode (dev) mounts components twice, which
+// would otherwise call registerAllTools() twice and trigger the browser's
+// "Duplicate tool name" error. This ensures tools register exactly once.
+let toolsRegistered = false;
 
 export function WebMCPToolRegistry() {
   useEffect(() => {
-    if (typeof document !== "undefined" && document.modelContext) {
+    if (typeof document !== "undefined" && document.modelContext && !toolsRegistered) {
       registerAllTools();
+      toolsRegistered = true;
     }
   }, []);
 
@@ -28,7 +30,19 @@ export function WebMCPToolRegistry() {
 function registerAllTools() {
   const mc = document.modelContext!;
 
-  mc.registerTool({
+  // Wrap registerTool so that if a tool with the same name already exists
+  // (e.g. from a hot-reload during dev), we unregister it first instead of
+  // throwing "Duplicate tool name".
+  const registerTool = (tool: WebMCPTool) => {
+    try {
+      mc.unregisterTool?.(tool.name);
+    } catch {
+      // ignore — tool may not have been registered yet
+    }
+    mc.registerTool(tool);
+  };
+
+  registerTool({
     name: "search_projects",
     description: "Search open-source projects by technology, domain, activity level, and contributor-friendliness.",
     inputSchema: {
@@ -50,7 +64,7 @@ function registerAllTools() {
     },
   });
 
-  mc.registerTool({
+  registerTool({
     name: "match_skills_to_projects",
     description: "Given developer skills and interests, find personalized project matches.",
     inputSchema: {
@@ -70,7 +84,7 @@ function registerAllTools() {
     },
   });
 
-  mc.registerTool({
+  registerTool({
     name: "find_issues",
     description: "Find open issues in a project filtered by labels, difficulty, or skill requirements.",
     inputSchema: {
@@ -92,7 +106,7 @@ function registerAllTools() {
     },
   });
 
-  mc.registerTool({
+  registerTool({
     name: "summarize_project",
     description: "Get comprehensive project summary including purpose, tech stack, and community health.",
     inputSchema: {
@@ -112,7 +126,7 @@ function registerAllTools() {
     },
   });
 
-  mc.registerTool({
+  registerTool({
     name: "explain_issue",
     description: "Get beginner-friendly explanation of an issue with context and suggested approach.",
     inputSchema: {
@@ -130,7 +144,7 @@ function registerAllTools() {
     },
   });
 
-  mc.registerTool({
+  registerTool({
     name: "check_contribution_requirements",
     description: "Get contribution requirements including CLA, code style, testing, and PR process.",
     inputSchema: {
@@ -146,7 +160,7 @@ function registerAllTools() {
     },
   });
 
-  mc.registerTool({
+  registerTool({
     name: "track_contribution",
     description: "Save a project or issue to the user contribution tracker.",
     inputSchema: {
@@ -166,7 +180,7 @@ function registerAllTools() {
     },
   });
 
-  mc.registerTool({
+  registerTool({
     name: "get_mentorship_projects",
     description: "Find projects in mentorship programs like GSoC, Outreachy, MLH, or Hacktoberfest.",
     inputSchema: {

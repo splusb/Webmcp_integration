@@ -6,6 +6,7 @@ import type { MatchSkillsInput } from "@/lib/types";
 export async function POST(req: NextRequest) {
   try {
     const input: MatchSkillsInput = await req.json();
+    console.log("[tool:match_skills_to_projects] executed with input:", JSON.stringify(input));
 
     if (!input.skills || input.skills.length === 0) {
       return NextResponse.json(

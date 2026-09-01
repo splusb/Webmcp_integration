@@ -13,6 +13,7 @@ const PROGRAM_TOPICS: Record<string, string[]> = {
 export async function POST(req: NextRequest) {
   try {
     const input = await req.json();
+    console.log("[tool:get_mentorship_projects] executed with input:", JSON.stringify(input));
     const program = input.program || "all";
 
     let topics: string[] = [];

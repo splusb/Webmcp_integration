@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { WebMCPToolRegistry } from "@/components/webmcp/ToolRegistry";
+import { AgentChat } from "@/components/AgentChat";
 
 export const metadata: Metadata = {
   title: "OpenSource Discovery Hub",
@@ -13,7 +15,13 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className="antialiased">{children}</body>
+      <body className="antialiased">
+        {/* Registers the 8 WebMCP tools on every page (not just home). */}
+        <WebMCPToolRegistry />
+        {children}
+        {/* In-app agent chatbox, available on every page. */}
+        <AgentChat />
+      </body>
     </html>
   );
 }

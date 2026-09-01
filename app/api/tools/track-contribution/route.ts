@@ -6,6 +6,7 @@ const contributions: Map<string, any> = new Map();
 export async function POST(req: NextRequest) {
   try {
     const input = await req.json();
+    console.log("[tool:track_contribution] executed with input:", JSON.stringify(input));
 
     if (!input.projectId) {
       return NextResponse.json(

@@ -5,6 +5,7 @@ import type { FindIssuesInput } from "@/lib/types";
 export async function POST(req: NextRequest) {
   try {
     const input: FindIssuesInput = await req.json();
+    console.log("[tool:find_issues] executed with input:", JSON.stringify(input));
     const [owner, repo] = input.projectId.split("/");
 
     if (!owner || !repo) {

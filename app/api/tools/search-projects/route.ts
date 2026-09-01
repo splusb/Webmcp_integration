@@ -5,6 +5,7 @@ import type { SearchProjectsInput } from "@/lib/types";
 export async function POST(req: NextRequest) {
   try {
     const input: SearchProjectsInput = await req.json();
+    console.log("[tool:search_projects] executed with input:", JSON.stringify(input));
     const queryParts: string[] = [];
 
     if (input.technologies?.length) {

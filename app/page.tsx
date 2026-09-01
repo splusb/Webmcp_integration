@@ -1,9 +1,6 @@
-import { WebMCPToolRegistry } from "@/components/webmcp/ToolRegistry";
-
 export default function Home() {
   return (
     <main className="min-h-screen bg-gradient-to-b from-gray-50 to-white">
-      <WebMCPToolRegistry />
       <div className="mx-auto max-w-5xl px-4 py-16">
         <div className="text-center">
           <h1 className="text-5xl font-bold tracking-tight text-gray-900">
