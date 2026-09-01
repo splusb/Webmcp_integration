@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect } from "react";
+import { upsertTracked } from "@/lib/tracker";
+import { vizActions } from "@/lib/viz/vizStore";
 
 interface WebMCPTool {
   name: string;
@@ -42,9 +44,20 @@ function registerAllTools() {
     mc.registerTool(tool);
   };
 
+  // Navigate the human to the /search page (where the graph lives) so agent
+  // results are visible. Deferred via setTimeout so the tool's execute() can
+  // return its result to the agent BEFORE the full-page navigation happens;
+  // a synchronous reload here would abort the agent loop mid-turn. No-op if
+  // we're already on /search (the store subscription updates the view live).
+  const goToSearch = () => {
+    if (typeof window !== "undefined" && window.location.pathname !== "/search") {
+      setTimeout(() => window.location.assign("/search"), 400);
+    }
+  };
+
   registerTool({
     name: "search_projects",
-    description: "Search open-source projects by technology, domain, activity level, and contributor-friendliness.",
+    description: "Search open-source projects by broad filters (domain, activity, stars) when the user does NOT name specific skills/languages. If the user names languages/skills, prefer match_skills_to_projects instead so the skill graph populates.",
     inputSchema: {
       type: "object",
       properties: {
@@ -60,13 +73,25 @@ function registerAllTools() {
     },
     execute: async (input) => {
       const res = await fetch("/api/tools/search-projects", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) });
-      return res.json();
+      const data = await res.json();
+      // Only publish to the shared graph store when this search actually names
+      // technologies to plot as skill nodes. Publishing with NO skills would
+      // overwrite an existing skill-matched graph and blank it out ("No
+      // connections found"), so in that case we just return data to the agent.
+      const skills = Array.isArray(input?.technologies)
+        ? input.technologies.filter((t: unknown) => typeof t === "string" && t.trim().length > 0)
+        : [];
+      if (data && Array.isArray(data.projects) && skills.length > 0) {
+        vizActions.publishResults(skills, data.projects);
+        goToSearch();
+      }
+      return data;
     },
   });
 
   registerTool({
     name: "match_skills_to_projects",
-    description: "Given developer skills and interests, find personalized project matches.",
+    description: "PREFERRED tool when the user mentions one or more programming languages or skills (e.g. 'JavaScript and Python beginner projects'). Finds personalized project matches for the given skills and renders them in the on-screen skill graph. Pass every language/skill the user named in the 'skills' array and set experienceLevel from words like 'beginner'.",
     inputSchema: {
       type: "object",
       properties: {
@@ -80,7 +105,15 @@ function registerAllTools() {
     },
     execute: async (input) => {
       const res = await fetch("/api/tools/match-skills", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) });
-      return res.json();
+      const data = await res.json();
+      // Publish into the shared store so the /search page (cards + graph) shows
+      // the agent's matches, then navigate there so the human sees the graph.
+      if (data && Array.isArray(data.projects)) {
+        const skills = Array.isArray(input?.skills) ? input.skills : [];
+        vizActions.publishResults(skills, data.projects);
+        goToSearch();
+      }
+      return data;
     },
   });
 
@@ -175,8 +208,39 @@ function registerAllTools() {
       required: ["projectId"],
     },
     execute: async (input) => {
-      const res = await fetch("/api/tools/track-contribution", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) });
-      return res.json();
+      // Persist to the server (keeps demo logs) ...
+      let apiResult: any = null;
+      try {
+        const res = await fetch("/api/tools/track-contribution", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(input),
+        });
+        apiResult = await res.json();
+      } catch {
+        /* server tracking is best-effort; localStorage is the source of truth */
+      }
+
+      // ... and to localStorage, which the dashboard reads. This is the key
+      // fix: the agent and the human "Track" button now share one store.
+      const id = input.issueId
+        ? `${input.projectId}#${input.issueId}`
+        : input.projectId;
+      const saved = upsertTracked({
+        id,
+        fullName: input.projectId,
+        name: input.projectId,
+        issueId: input.issueId ?? null,
+        status: input.status || "interested",
+        notes: input.notes,
+      });
+
+      return {
+        success: true,
+        message: `Tracked ${id} as "${saved.status}". View it on your dashboard.`,
+        contribution: saved,
+        server: apiResult,
+      };
     },
   });
 
@@ -198,5 +262,93 @@ function registerAllTools() {
     },
   });
 
-  console.log("[WebMCP] All 8 tools registered successfully");
+  // --- Agent-driven visualization controls -------------------------------
+  // These tools don't fetch data — their execute() runs in the browser and
+  // writes to the shared viz store, so the on-screen D3 graph reacts live to
+  // what the user asks the agent. This is the "humans + agents create together"
+  // moment: the agent changes what the human sees in real time.
+
+  registerTool({
+    name: "highlight_project",
+    description:
+      "Visually highlight a project node in the on-screen skill graph. Pass a specific name (e.g. 'excalidraw' or 'facebook/react'), OR a superlative describing the current results: 'most-starred', 'most-forked', or 'most-issues'. The matching node glows and its connections are emphasized while others dim. Use this (NOT a new search) when the user asks to point out, highlight, or focus on a project in the results already shown.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        project: {
+          type: "string",
+          description: "Project name or owner/repo to highlight in the graph.",
+        },
+      },
+      required: ["project"],
+    },
+    execute: async (input) => {
+      let query = String(input?.project ?? "").trim();
+      if (!query) {
+        return { success: false, message: "No project name provided." };
+      }
+
+      // Resolve superlatives ("most-starred" / "most forked" / "most issues")
+      // against the current shared results so the agent can point at the top
+      // project without knowing its exact name — and without re-searching.
+      const norm = query.toLowerCase().replace(/[^a-z]/g, "");
+      const results = vizActions.getState().results || [];
+      if (results.length > 0 && (norm.includes("most") || norm.includes("top") || norm.includes("highest"))) {
+        let metric: "stars" | "forks" | "issues" = "stars";
+        if (norm.includes("fork")) metric = "forks";
+        else if (norm.includes("issue")) metric = "issues";
+        const pick = [...results].sort((a: any, b: any) => {
+          const av = metric === "stars" ? a.stars : metric === "forks" ? a.forks : a.openIssueCount;
+          const bv = metric === "stars" ? b.stars : metric === "forks" ? b.forks : b.openIssueCount;
+          return (bv || 0) - (av || 0);
+        })[0];
+        if (pick) {
+          query = pick.fullName || pick.name || query;
+        }
+      }
+
+      vizActions.highlightProject(query);
+      return {
+        success: true,
+        message: `Highlighted "${query}" in the skill graph.`,
+      };
+    },
+  });
+
+  registerTool({
+    name: "focus_skill",
+    description:
+      "Focus the on-screen skill graph on a single selected skill (e.g. 'Python'), emphasizing that skill node and the projects it connects to while fading the rest. Use when the user wants to see the projects for one particular skill.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        skill: {
+          type: "string",
+          description: "The skill/language to focus on (must be one the user selected).",
+        },
+      },
+      required: ["skill"],
+    },
+    execute: async (input) => {
+      const skill = String(input?.skill ?? "").trim();
+      if (!skill) {
+        return { success: false, message: "No skill provided." };
+      }
+      vizActions.focusSkill(skill);
+      return { success: true, message: `Focused the graph on "${skill}".` };
+    },
+  });
+
+  registerTool({
+    name: "reset_graph",
+    description:
+      "Clear any highlight or focus on the on-screen skill graph, restoring all nodes and connections to full visibility.",
+    inputSchema: { type: "object", properties: {} },
+    execute: async () => {
+      vizActions.resetGraph();
+      return { success: true, message: "Graph view reset." };
+    },
+  });
+
+  console.log("[WebMCP] All 11 tools registered successfully");
 }

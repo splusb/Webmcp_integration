@@ -99,6 +99,20 @@ export async function getReadme(owner: string, repo: string) {
   }
 }
 
+export async function getRepositoryLanguages(owner: string, repo: string) {
+  const cacheKey = `languages:${owner}/${repo}`;
+  const cached = cache.get(cacheKey);
+  if (cached) return cached;
+
+  try {
+    const { data } = await octokit.repos.listLanguages({ owner, repo });
+    cache.set(cacheKey, data, 3600); // 1 hour cache
+    return data;
+  } catch {
+    return null;
+  }
+}
+
 export async function getCommunityProfile(owner: string, repo: string) {
   try {
     const { data } = await octokit.repos.getCommunityProfileMetrics({ owner, repo });

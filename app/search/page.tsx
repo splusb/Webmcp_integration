@@ -1,8 +1,22 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import dynamic from "next/dynamic";
+import { motion, AnimatePresence } from "framer-motion";
 import { WebMCPToolRegistry } from "@/components/webmcp/ToolRegistry";
-import { ProjectCard } from "@/components/ProjectCard";
+import { AnimatedResults } from "@/components/viz/AnimatedResults";
+import { VizErrorBoundary } from "@/components/viz/VizErrorBoundary";
+import { useVizStore } from "@/lib/viz/vizStore";
+import { panelVariant } from "@/components/viz/motionVariants";
+
+const SkillNetworkGraph = dynamic(() => import("@/components/viz/SkillNetworkGraph"), {
+  ssr: false,
+  loading: () => (
+    <div className="rounded-xl border bg-white p-8 text-center text-sm text-gray-400 shadow-sm">
+      Loading graph…
+    </div>
+  ),
+});
 
 const LANGUAGES = [
   "JavaScript", "TypeScript", "Python", "Java", "Go", "Rust",
@@ -50,6 +64,27 @@ export default function SearchPage() {
   const [loading, setLoading] = useState(false);
   const [sortBy, setSortBy] = useState("stars");
   const [searched, setSearched] = useState(false);
+
+  // Bridge: when the AGENT runs match_skills_to_projects / search_projects, its
+  // tool publishes the results into the shared viz store. We sync them into this
+  // page's state so the cards AND the graph render exactly as if the human had
+  // searched. resultsNonce bumps on every agent publish (including after the
+  // navigation to /search, where the store rehydrates from sessionStorage).
+  const sharedSkills = useVizStore((s) => s.skills);
+  const sharedResults = useVizStore((s) => s.results);
+  const resultsNonce = useVizStore((s) => s.resultsNonce);
+
+  useEffect(() => {
+    if (resultsNonce > 0 && sharedResults.length > 0) {
+      setResults(sharedResults);
+      if (sharedSkills.length > 0) {
+        setSelectedSkills(sharedSkills);
+        setMode("skills");
+      }
+      setSearched(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resultsNonce]);
 
   function toggleSkill(skill: string) {
     setSelectedSkills((prev) =>
@@ -169,8 +204,16 @@ export default function SearchPage() {
         <div className="mt-6 grid gap-6 lg:grid-cols-[320px_1fr]">
           {/* Sidebar Filters */}
           <div className="space-y-6">
+            <AnimatePresence mode="wait">
             {mode === "skills" ? (
-              <div className="rounded-xl border bg-white p-5 shadow-sm">
+              <motion.div
+                key="skills"
+                variants={panelVariant}
+                initial="hidden"
+                animate="visible"
+                exit="exit"
+                className="rounded-xl border bg-white p-5 shadow-sm"
+              >
                 <h2 className="text-sm font-semibold text-gray-900 uppercase tracking-wide">Your Skills</h2>
                 <div className="mt-3 flex flex-wrap gap-2">
                   {LANGUAGES.map((lang) => (
@@ -244,9 +287,16 @@ export default function SearchPage() {
                 >
                   {loading ? "Finding matches..." : "Find Matching Projects"}
                 </button>
-              </div>
+              </motion.div>
             ) : (
-              <div className="rounded-xl border bg-white p-5 shadow-sm space-y-4">
+              <motion.div
+                key="search"
+                variants={panelVariant}
+                initial="hidden"
+                animate="visible"
+                exit="exit"
+                className="rounded-xl border bg-white p-5 shadow-sm space-y-4"
+              >
                 <div>
                   <label className="text-sm font-semibold text-gray-900 uppercase tracking-wide">Language</label>
                   <select
@@ -328,12 +378,21 @@ export default function SearchPage() {
                 >
                   {loading ? "Searching..." : "Search Projects"}
                 </button>
-              </div>
+              </motion.div>
             )}
+            </AnimatePresence>
           </div>
 
           {/* Results */}
           <div>
+            {mode === "skills" && (
+              <div className="mb-4">
+                <VizErrorBoundary>
+                  <SkillNetworkGraph skills={selectedSkills} results={results} loading={loading} />
+                </VizErrorBoundary>
+              </div>
+            )}
+
             {results.length > 0 && (
               <div className="mb-4 flex items-center justify-between">
                 <p className="text-sm text-gray-600">{results.length} projects found</p>
@@ -364,9 +423,7 @@ export default function SearchPage() {
                 </div>
               )}
 
-              {!loading && sortedResults().map((project) => (
-                <ProjectCard key={project.id} project={project} />
-              ))}
+              {!loading && <AnimatedResults results={sortedResults()} sortBy={sortBy} mode={mode} />}
 
               {!loading && searched && results.length === 0 && (
                 <div className="py-16 text-center">

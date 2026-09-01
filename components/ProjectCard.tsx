@@ -2,6 +2,9 @@
 
 import { useState } from "react";
 import type { Project } from "@/lib/types";
+import { upsertTracked } from "@/lib/tracker";
+import ProjectStatsPanel from "@/components/viz/ProjectStatsPanel";
+import { VizErrorBoundary } from "@/components/viz/VizErrorBoundary";
 
 interface ProjectCardProps {
   project: Project;
@@ -12,34 +15,31 @@ interface ProjectCardProps {
 export function ProjectCard({ project, onTrack, isTracked = false }: ProjectCardProps) {
   const [tracked, setTracked] = useState(isTracked);
   const [saving, setSaving] = useState(false);
+  // Per-card expand state — each ProjectCard instance owns its own flag (Req 3.6).
+  const [expanded, setExpanded] = useState(false);
 
   async function handleTrack() {
     setSaving(true);
     try {
-      // Save to API
-      await fetch("/api/tools/track-contribution", {
+      const id = project.id || project.fullName;
+      // Best-effort server log (keeps demo console output).
+      fetch("/api/tools/track-contribution", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId: project.id || project.fullName, status: "interested" }),
-      });
+        body: JSON.stringify({ projectId: id, status: "interested" }),
+      }).catch(() => {});
 
-      // Save to localStorage for dashboard
-      const stored = JSON.parse(localStorage.getItem("tracked_projects") || "[]");
-      const exists = stored.some((p: any) => p.id === (project.id || project.fullName));
-      if (!exists) {
-        stored.push({
-          id: project.id || project.fullName,
-          name: project.name,
-          fullName: project.fullName,
-          description: project.description,
-          url: project.url,
-          stars: project.stars,
-          language: project.language,
-          status: "interested",
-          trackedAt: new Date().toISOString(),
-        });
-        localStorage.setItem("tracked_projects", JSON.stringify(stored));
-      }
+      // Shared tracker store — same one the agent and dashboard use.
+      upsertTracked({
+        id,
+        name: project.name,
+        fullName: project.fullName,
+        description: project.description,
+        url: project.url,
+        stars: project.stars,
+        language: project.language,
+        status: "interested",
+      });
 
       setTracked(true);
       onTrack?.(project);
@@ -93,7 +93,26 @@ export function ProjectCard({ project, onTrack, isTracked = false }: ProjectCard
         <span>{(project.forks || 0).toLocaleString()} forks</span>
         <span>{project.openIssueCount || 0} issues</span>
         {project.license && <span>{project.license}</span>}
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          aria-expanded={expanded}
+          className="ml-auto rounded-lg px-3 py-1.5 text-xs font-medium bg-gray-100 text-gray-700 hover:bg-blue-100 hover:text-blue-700"
+        >
+          {expanded ? "\u25BE" : "\u25B8"} Stats
+        </button>
       </div>
+      {expanded && (
+        <VizErrorBoundary>
+          <ProjectStatsPanel
+            projectId={project.fullName || project.id}
+            open={expanded}
+            initialStars={project.stars}
+            initialLanguage={project.language}
+            initialTopics={project.topics}
+          />
+        </VizErrorBoundary>
+      )}
     </div>
   );
 }

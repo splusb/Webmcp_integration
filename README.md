@@ -472,10 +472,10 @@ Result: Complete contributor onboarding package
 - **React Query** - Data fetching and caching
 
 ### Backend
-- **Next.js API Routes** - Backend endpoints
-- **Prisma** - Database ORM
-- **PostgreSQL / SQLite** - Database (Postgres for prod, SQLite for dev)
-- **Redis** - Caching layer (optional, in-memory for MVP)
+- **Next.js API Routes** - Backend endpoints for WebMCP tool execution
+- **OpenAI API** - Powers the in-app agent (server-side function calling)
+- **In-memory cache** - Reduces GitHub API calls (1hr projects, 15min issues)
+- **localStorage** - Client-side contribution tracking (no login required)
 
 ### External APIs
 - **GitHub REST API** - Primary data source
@@ -523,30 +523,33 @@ Result: Complete contributor onboarding package
 ```
 /
 ├── app/
+│   ├── layout.tsx                       # Root layout (mounts tools + agent)
 │   ├── page.tsx                         # Home page
-│   ├── search/page.tsx                  # Search interface
-│   ├── project/[id]/page.tsx            # Project detail
-│   ├── dashboard/page.tsx               # User dashboard
-│   └── api/tools/
-│       ├── search-projects/route.ts
-│       ├── find-issues/route.ts
-│       ├── summarize-project/route.ts
-│       ├── match-skills/route.ts
-│       ├── explain-issue/route.ts
-│       ├── contribution-requirements/route.ts
-│       ├── track-contribution/route.ts
-│       └── mentorship-projects/route.ts
+│   ├── search/page.tsx                  # Search + skill-match interface
+│   ├── dashboard/page.tsx               # Contribution tracker dashboard
+│   └── api/
+│       ├── agent/route.ts               # OpenAI agent (server-side brain)
+│       └── tools/
+│           ├── search-projects/route.ts
+│           ├── find-issues/route.ts
+│           ├── summarize-project/route.ts
+│           ├── match-skills/route.ts
+│           ├── explain-issue/route.ts
+│           ├── contribution-requirements/route.ts
+│           ├── track-contribution/route.ts
+│           └── mentorship-projects/route.ts
 ├── components/
-│   ├── ui/                              # shadcn components
-│   ├── webmcp/ToolRegistry.tsx          # WebMCP tool registration
-│   ├── ProjectCard.tsx
-│   └── IssueCard.tsx
+│   ├── webmcp/ToolRegistry.tsx          # Registers the 8 WebMCP tools
+│   ├── AgentChat.tsx                    # In-app agent chat (browser hands)
+│   ├── MarkdownMessage.tsx              # Renders agent markdown replies
+│   └── ProjectCard.tsx                  # Project result card + Track button
 ├── lib/
-│   ├── github.ts                        # GitHub API client
-│   ├── cache.ts                         # Caching utilities
+│   ├── github.ts                        # GitHub API client (Octokit)
+│   ├── cache.ts                         # In-memory TTL cache
 │   ├── matching.ts                      # Skill matching logic
-│   └── types.ts                         # TypeScript types
-├── prisma/schema.prisma                 # Database schema
+│   ├── tracker.ts                       # Shared localStorage tracker store
+│   ├── types.ts                         # TypeScript types
+│   └── webmcp.d.ts                      # document.modelContext typings
 └── public/
 ```
 
@@ -719,9 +722,6 @@ npm install
 cp .env.example .env.local
 # Edit .env.local and add your GitHub token
 
-# Run database migrations
-npx prisma migrate dev
-
 # Start development server
 npm run dev
 ```
@@ -730,7 +730,8 @@ npm run dev
 
 ```env
 GITHUB_TOKEN=your_github_personal_access_token
-DATABASE_URL=file:./dev.db
+OPENAI_API_KEY=your_openai_api_key
+OPENAI_MODEL=gpt-4o-mini
 NEXT_PUBLIC_APP_URL=http://localhost:3000
 ```
 

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { WebMCPRegisteredTool } from "@/lib/webmcp";
+import { MarkdownMessage } from "@/components/MarkdownMessage";
 
 /**
  * AgentChat — an in-app agent chatbox.
@@ -192,11 +193,13 @@ export function AgentChat() {
                   {m.content && (
                     <div
                       className={
-                        "inline-block max-w-[85%] whitespace-pre-wrap rounded-lg px-3 py-2 text-sm " +
-                        (isUser ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-900")
+                        "inline-block max-w-[85%] rounded-lg px-3 py-2 text-sm " +
+                        (isUser
+                          ? "whitespace-pre-wrap bg-gray-900 text-white"
+                          : "bg-gray-100 text-gray-900")
                       }
                     >
-                      {m.content}
+                      {isUser ? m.content : <MarkdownMessage content={m.content} />}
                     </div>
                   )}
                 </div>

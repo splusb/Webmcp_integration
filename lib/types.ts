@@ -16,6 +16,8 @@ export interface Project {
   license: string | null;
   contributorFriendliness: "high" | "medium" | "low";
   matchScore?: number;
+  /** Selected skills this project was matched against (drives graph edges). */
+  matchedSkills?: string[];
 }
 
 export interface Issue {

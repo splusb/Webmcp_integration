@@ -27,7 +27,7 @@ npm-debug.log*
 # vercel
 .vercel
 
-# prisma
-prisma/dev.db
-prisma/dev.db-journal
 tsconfig.tsbuildinfo
+
+.kiro/
+

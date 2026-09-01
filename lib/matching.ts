@@ -21,56 +21,90 @@ const SKILL_ADJACENCY: Record<string, string[]> = {
 };
 
 export function calculateMatchScore(
-  project: { language: string; topics: string[] },
+  project: { language: string; topics: string[]; stars?: number },
   input: MatchSkillsInput
 ): number {
-  let score = 0;
   const projectTech = [
     project.language?.toLowerCase(),
     ...project.topics.map((t) => t.toLowerCase()),
   ].filter(Boolean);
 
+  // Best per-project skill match: a project that matches ANY selected skill
+  // directly scores high; adjacent-only matches score lower. We take the
+  // strongest signal rather than averaging across all skills, so a great
+  // single-skill match isn't diluted by the skills it doesn't match.
+  let best = 0;
+  let matchedSkills = 0;
+
   for (const skill of input.skills) {
     const lower = skill.toLowerCase();
-    // Direct match
+    let skillScore = 0;
+
     if (projectTech.includes(lower)) {
-      score += 1.0;
-      continue;
-    }
-    // Adjacent match
-    const adjacent = SKILL_ADJACENCY[lower] || [];
-    for (const adj of adjacent) {
-      if (projectTech.includes(adj)) {
-        score += 0.5;
-        break;
+      skillScore = 1.0; // direct language/topic match
+    } else {
+      const adjacent = SKILL_ADJACENCY[lower] || [];
+      if (adjacent.some((adj) => projectTech.includes(adj))) {
+        skillScore = 0.5; // adjacent match
       }
     }
+
+    if (skillScore > 0) matchedSkills += 1;
+    if (skillScore > best) best = skillScore;
   }
 
-  // Normalize by number of skills
-  return input.skills.length > 0 ? score / input.skills.length : 0;
+  if (best === 0) return 0;
+
+  // Bonus for matching more than one selected skill (up to +0.15 per extra
+  // matched skill), so multi-skill projects rank above single-skill ones.
+  const multiSkillBonus = Math.min(0.3, (matchedSkills - 1) * 0.15);
+
+  // Small popularity signal (log-scaled stars, up to +0.1) so equally-matched
+  // projects don't all render with an identical weight — gives the graph and
+  // the ranking visible variation.
+  const stars = project.stars ?? 0;
+  const popularity = stars > 0 ? Math.min(0.1, Math.log10(stars) / 60) : 0;
+
+  return Math.min(1, best + multiSkillBonus + popularity);
 }
 
-export function buildSearchQuery(input: MatchSkillsInput): string {
+/**
+ * Build a GitHub search query for a SINGLE language/skill.
+ *
+ * GitHub's repository search does not reliably support OR-ing multiple
+ * `language:` qualifiers in one query (especially combined with other
+ * qualifiers like stars/pushed), so the route runs one query per selected
+ * skill and merges the results instead. This function builds one such query.
+ */
+export function buildSkillQuery(
+  skill: string,
+  input: MatchSkillsInput
+): string {
   const parts: string[] = [];
 
-  // Add language filters
-  if (input.skills.length > 0) {
-    parts.push("language:" + input.skills[0]);
+  if (skill && skill.trim().length > 0) {
+    parts.push(`language:${skill.trim()}`);
   }
 
-  // Add good first issues filter for beginners
+  // Beginner-friendly repos need good first issues.
   if (input.experienceLevel === "beginner") {
     parts.push("good-first-issues:>1");
   }
 
-  // Minimum stars for quality
+  // Quality + recency floors.
   parts.push("stars:>100");
-
-  // Active projects
   parts.push("pushed:>" + getDateMonthsAgo(3));
 
   return parts.join(" ");
+}
+
+/**
+ * Kept for backward compatibility / single-skill callers. Builds a query for
+ * the first selected skill only.
+ */
+export function buildSearchQuery(input: MatchSkillsInput): string {
+  const first = input.skills[0] ?? "";
+  return buildSkillQuery(first, input);
 }
 
 function getDateMonthsAgo(months: number): string {

@@ -29,6 +29,8 @@ const SYSTEM_PROMPT = `You are an assistant embedded in "OpenSource Discovery Hu
 You have access to the page's WebMCP tools. Use them to answer the user's request.
 - Prefer calling tools over guessing. Chain tools when useful: e.g. match_skills_to_projects -> summarize_project -> find_issues -> explain_issue.
 - When a tool returns a projectId (like "owner/repo") or an issueId, reuse it as input to the next tool.
+- IMPORTANT: Once you have already found/searched projects in this conversation, do NOT run search_projects or match_skills_to_projects again for follow-up requests about those same results. For requests like "highlight the most-starred one", "focus on Python", or "point out X", call the visualization tools (highlight_project, focus_skill, reset_graph) DIRECTLY. Re-searching would reset the on-screen graph.
+- highlight_project accepts superlatives: pass "most-starred", "most-forked", or "most-issues" directly, or a specific project name. Do not re-search to figure out which is most-starred.
 - Keep replies concise and friendly. After using tools, summarize the results for a developer audience.`;
 
 interface AgentRequestBody {

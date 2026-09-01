@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getRepository, getContributingGuide, getCommunityProfile } from "@/lib/github";
+import { getRepository, getContributingGuide, getCommunityProfile, getRepositoryLanguages } from "@/lib/github";
+import { normalizeLanguages } from "@/lib/viz/languages";
 
 export async function POST(req: NextRequest) {
   try {
@@ -14,21 +15,52 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const repoData = await getRepository(owner, repo);
-    const community = input.includeCommunityMetrics !== false ? await getCommunityProfile(owner, repo) : null;
-    const contributingGuide = input.includeContributionGuide !== false ? await getContributingGuide(owner, repo) : null;
+    // The stats panel only needs repo data + language breakdown, so it can pass
+    // includeCommunityMetrics:false / includeContributionGuide:false to skip the
+    // two slow calls (getCommunityProfileMetrics is one of GitHub's slowest
+    // endpoints, and reading CONTRIBUTING.md is an extra round trip). The agent's
+    // summarize_project tool still gets the full picture by default.
+    const wantCommunity = input.includeCommunityMetrics !== false;
+    const wantGuide = input.includeContributionGuide !== false;
+
+    // Run every needed call in PARALLEL instead of sequentially. Optional calls
+    // resolve to null when not requested so the response shape is unchanged.
+    const [repoData, community, contributingGuide, langMap] = await Promise.all([
+      getRepository(owner, repo),
+      wantCommunity ? getCommunityProfile(owner, repo) : Promise.resolve(null),
+      wantGuide ? getContributingGuide(owner, repo) : Promise.resolve(null),
+      getRepositoryLanguages(owner, repo),
+    ]);
+
+    const languages = langMap ? normalizeLanguages(langMap) : [];
+
+    const project: {
+      id: string;
+      name: string;
+      purpose: string;
+      techStack: string[];
+      license: string;
+      stars: number;
+      forks: number;
+      openIssues: number;
+      languages?: { name: string; percent: number }[];
+    } = {
+      id: repoData.full_name,
+      name: repoData.name,
+      purpose: repoData.description || "No description available",
+      techStack: [repoData.language, ...(repoData.topics || [])].filter(Boolean),
+      license: repoData.license?.spdx_id || "Unknown",
+      stars: repoData.stargazers_count,
+      forks: repoData.forks_count,
+      openIssues: repoData.open_issues_count,
+    };
+
+    if (languages.length > 0) {
+      project.languages = languages;
+    }
 
     const summary = {
-      project: {
-        id: repoData.full_name,
-        name: repoData.name,
-        purpose: repoData.description || "No description available",
-        techStack: [repoData.language, ...(repoData.topics || [])].filter(Boolean),
-        license: repoData.license?.spdx_id || "Unknown",
-        stars: repoData.stargazers_count,
-        forks: repoData.forks_count,
-        openIssues: repoData.open_issues_count,
-      },
+      project,
       community: {
         communityHealth: community?.health_percentage ? community.health_percentage + "%" : "Unknown",
         hasCodeOfConduct: !!community?.files?.code_of_conduct,
