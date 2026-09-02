@@ -135,11 +135,8 @@ DATA LAYER
 | `focus_skill` | Focus the graph on one skill | skill |
 | `reset_graph` | Restore the full graph | — |
 
-> The `## Tool Specifications` below show detailed schemas for the original
-> eight tools. The seven newer tools (`estimate_first_response_time`,
-> `check_issue_availability`, `assess_issue_difficulty`,
-> `draft_contribution_plan`, `highlight_project`, `focus_skill`, `reset_graph`)
-> follow the same registration pattern — see `components/webmcp/ToolRegistry.tsx`.
+> Detailed schemas for all 15 tools are in the `## Tool Specifications` section
+> below, and the source of truth is `components/webmcp/ToolRegistry.tsx`.
 
 ### Tool Specifications
 
@@ -358,6 +355,143 @@ document.modelContext.registerTool({
     });
     return response.json();
   }
+});
+```
+
+#### 9. estimate_first_response_time
+
+```javascript
+document.modelContext.registerTool({
+  name: "estimate_first_response_time",
+  description: "Estimate how responsive a project is by sampling recent closed PRs: median time to first response (first comment/review from someone other than the author) and median time to merge. Returns a responsiveness rating.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      projectId: { type: "string", description: "e.g. facebook/react" },
+      sampleSize: { type: "number", description: "How many recent closed PRs to sample (3-15, default 10)" }
+    },
+    required: ["projectId"]
+  },
+  execute: async (input) => {
+    const response = await fetch("/api/tools/estimate-first-response-time", {
+      method: "POST", body: JSON.stringify(input)
+    });
+    return response.json();
+  }
+});
+```
+
+#### 10. check_issue_availability
+
+```javascript
+document.modelContext.registerTool({
+  name: "check_issue_availability",
+  description: "Check whether an issue is free to work on: assigned, claimed in a recent comment, or covered by an open PR. Returns available | likely-taken | taken with evidence.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      projectId: { type: "string", description: "e.g. facebook/react" },
+      issueId: { type: "string", description: "The issue number" }
+    },
+    required: ["projectId", "issueId"]
+  },
+  execute: async (input) => {
+    const response = await fetch("/api/tools/check-issue-availability", {
+      method: "POST", body: JSON.stringify(input)
+    });
+    return response.json();
+  }
+});
+```
+
+#### 11. assess_issue_difficulty
+
+```javascript
+document.modelContext.registerTool({
+  name: "assess_issue_difficulty",
+  description: "Assess an issue's real difficulty beyond its label, using comment volume, age, description detail, keywords, and assignment/claim signals. Returns a score, reasons, and red flags.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      projectId: { type: "string", description: "e.g. facebook/react" },
+      issueId: { type: "string", description: "The issue number" },
+      experienceLevel: { type: "string", enum: ["beginner", "intermediate", "senior"], default: "beginner" }
+    },
+    required: ["projectId", "issueId"]
+  },
+  execute: async (input) => {
+    const response = await fetch("/api/tools/assess-issue-difficulty", {
+      method: "POST", body: JSON.stringify(input)
+    });
+    return response.json();
+  }
+});
+```
+
+#### 12. draft_contribution_plan
+
+A "tool that thinks": it fetches the repo's README/CONTRIBUTING (and optionally an
+issue), then makes its OWN server-side OpenAI call to synthesize a plan.
+
+```javascript
+document.modelContext.registerTool({
+  name: "draft_contribution_plan",
+  description: "Generate a concrete step-by-step first-contribution plan (setup, files to look at, tests, PR checklist) by synthesizing the repo's README and CONTRIBUTING guide with AI.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      projectId: { type: "string", description: "e.g. facebook/react" },
+      issueId: { type: "string", description: "Optional issue number to tailor the plan" },
+      experienceLevel: { type: "string", enum: ["beginner", "intermediate", "senior"], default: "beginner" }
+    },
+    required: ["projectId"]
+  },
+  execute: async (input) => {
+    const response = await fetch("/api/tools/draft-contribution-plan", {
+      method: "POST", body: JSON.stringify(input)
+    });
+    return response.json();
+  }
+});
+```
+
+#### 13-15. Visualization tools (browser-only actions)
+
+These do not fetch data or hit an API route — their `execute()` runs in the
+browser and writes to the shared viz store (`lib/viz`), so the on-screen D3
+skill graph reacts live to what the user asks the agent.
+
+```javascript
+// highlight_project — glow a node (by name or "most-starred"/"most-forked"/"most-issues")
+document.modelContext.registerTool({
+  name: "highlight_project",
+  description: "Highlight a project node in the on-screen skill graph.",
+  inputSchema: {
+    type: "object",
+    properties: { project: { type: "string" } },
+    required: ["project"]
+  },
+  execute: async (input) => { /* vizActions.highlightProject(...) */ }
+});
+
+// focus_skill — emphasize one skill and its connected projects
+document.modelContext.registerTool({
+  name: "focus_skill",
+  description: "Focus the skill graph on a single selected skill.",
+  inputSchema: {
+    type: "object",
+    properties: { skill: { type: "string" } },
+    required: ["skill"]
+  },
+  execute: async (input) => { /* vizActions.focusSkill(...) */ }
+});
+
+// reset_graph — clear any highlight/focus
+document.modelContext.registerTool({
+  name: "reset_graph",
+  description: "Clear any highlight or focus, restoring the full graph.",
+  inputSchema: { type: "object", properties: {} },
+  execute: async () => { /* vizActions.resetGraph() */ }
 });
 ```
 
