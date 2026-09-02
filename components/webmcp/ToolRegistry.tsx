@@ -195,6 +195,24 @@ function registerAllTools() {
   });
 
   registerTool({
+    name: "draft_contribution_plan",
+    description: "Generate a concrete, step-by-step first-contribution plan for a project (and optionally a specific issue): setup commands, which files to look at, how to run tests, and a PR checklist. Synthesizes the repo's README and CONTRIBUTING guide with AI. Use when the user has picked a project/issue and asks how to actually get started.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: { type: "string", description: "e.g. facebook/react" },
+        issueId: { type: "string", description: "Optional issue number to tailor the plan to a specific issue" },
+        experienceLevel: { type: "string", enum: ["beginner", "intermediate", "senior"], default: "beginner" },
+      },
+      required: ["projectId"],
+    },
+    execute: async (input) => {
+      const res = await fetch("/api/tools/draft-contribution-plan", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) });
+      return res.json();
+    },
+  });
+
+  registerTool({
     name: "assess_issue_difficulty",
     description: "Assess whether an issue is realistically doable for a given experience level, beyond its label. Analyzes comment volume, age, description detail, keywords, and assignment/claim signals to return a difficulty score, reasons, and red flags (taken, contentious, stale). Use after find_issues to filter to genuinely doable issues.",
     inputSchema: {
@@ -402,5 +420,5 @@ function registerAllTools() {
     },
   });
 
-  console.log("[WebMCP] All 14 tools registered successfully");
+  console.log("[WebMCP] All 15 tools registered successfully");
 }
