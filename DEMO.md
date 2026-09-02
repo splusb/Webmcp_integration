@@ -1,6 +1,6 @@
 # Demo Guide — OpenSource Discovery Hub (WebMCP + in-app agent)
 
-This app exposes **15 WebMCP tools** and includes an in-app AI agent (OpenAI)
+This app exposes **19 WebMCP tools** and includes an in-app AI agent (OpenAI)
 that reads those tools and calls them on the user's behalf. A human asks in
 plain language; the agent chains the tools to do the tedious work. This guide
 is the reproducible script for demoing it.
@@ -9,22 +9,22 @@ is the reproducible script for demoing it.
 
 ## 0. One-time setup
 
-### Environment (`.env`)
+### Environment (`.env.local`)
 ```
 GITHUB_TOKEN=<your GitHub PAT>        # read-only public access is enough
-OPENAI_API_KEY=<your OpenAI key>      # NOT the placeholder "xy"
+OPENAI_API_KEY=<your OpenAI key>
 OPENAI_MODEL=gpt-4o-mini              # any function-calling model works
 NEXT_PUBLIC_APP_URL=http://localhost:3000
 ```
-> `.env` is git-ignored. Never commit real keys. Rotate the GitHub PAT if it
-> was ever pasted into a shared chat/editor.
+> `.env.local` is git-ignored. Never commit real keys. Rotate the GitHub PAT if
+> it was ever pasted into a shared chat/editor.
 
 ### Install & run
 ```
 npm install
 npm run dev        # serves http://localhost:3000
 ```
-> Next.js reads `.env` only at startup. If you change a key, restart the server.
+> Next.js reads `.env.local` only at startup. If you change a key, restart the server.
 
 ### Browser (required for the WebMCP part)
 WebMCP is behind a flag. Use **Edge or Chrome 150+**:
@@ -37,7 +37,7 @@ WebMCP is behind a flag. Use **Edge or Chrome 150+**:
 
 ---
 
-## 1. The 15 tools
+## 1. The 19 tools
 
 **Discovery & project vetting**
 - `search_projects` — search projects by tech/domain/stars (broad filters)
@@ -53,9 +53,15 @@ WebMCP is behind a flag. Use **Edge or Chrome 150+**:
 - `assess_issue_difficulty` — real difficulty score beyond the label (comments, age, keywords, red flags)
 - `explain_issue` — beginner-friendly explanation
 
-**Action / guidance**
+**Action / guidance / tracking**
 - `draft_contribution_plan` — AI-synthesized step-by-step first-contribution plan (setup, files, tests, PR checklist)
-- `track_contribution` — save to the tracker/dashboard (also localStorage)
+- `track_contribution` — save to the tracker/dashboard, or change a status (also localStorage)
+- `summarize_my_progress` — journey stats: top languages, fastest merge, completion rate
+
+**Remember me (personalization, localStorage)**
+- `set_skill_profile` — add/remove skills & interests, or clear the profile
+- `get_skill_profile` — read-only "what do you remember about me?"
+- `get_recommendations` — matches from the saved profile (explicit skills override it)
 
 **Visualization (agent drives the on-screen skill graph)**
 - `highlight_project` — glow a project node (by name or "most-starred/forked/issues")
@@ -69,9 +75,9 @@ WebMCP is behind a flag. Use **Edge or Chrome 150+**:
    ```js
    await document.modelContext.getTools()
    ```
-   Expect an **Array(15)**. On load you'll also see:
+   Expect an **Array(19)**. On load you'll also see:
    ```
-   [WebMCP] All 15 tools registered successfully
+   [WebMCP] All 19 tools registered successfully
    ```
 
 ### Manual tool call (you act as the agent)
@@ -128,6 +134,31 @@ documented — check the repo") instead of inventing them.
 Expect a chain: `match_skills_to_projects` → `find_issues` →
 `check_issue_availability` / `assess_issue_difficulty` → a specific recommendation.
 
+### Test 7 — The app remembers you (personalization)
+> remember I know Rust and care about developer tools
+
+Expect `calling: set_skill_profile`. Then, even **after a page refresh**:
+> what should I work on?
+
+Expect `calling: get_recommendations` — tailored matches with **no re-typing of skills**,
+and the skill graph populates. Follow-ups:
+> what skills have you logged for me?   → `get_skill_profile` (read-only)
+> drop Go                                → `set_skill_profile` removes only Go, keeps the rest
+
+### Test 8 — Progress summary
+> how's my contribution progress? what tech do I use most?
+
+Expect `calling: summarize_my_progress` — totals per status, top languages, fastest merge.
+(Track a couple of projects first so there's data.)
+
+### Test 9 — Agent drives the graph (the "together" moment)
+> find me JavaScript and Python beginner projects     → graph appears
+> highlight the most-starred one                       → that node glows
+> focus on my Python matches                           → Python cluster isolates
+
+`highlight_project` / `focus_skill` run in the browser — you'll see the graph change with
+no `/api/tools/*` call in the terminal.
+
 ---
 
 ## 3. Where to point during the demo (3 sources of proof)
@@ -152,13 +183,14 @@ The OpenAI key stays server-side in `app/api/agent/route.ts` (the "brain").
 -> send results back -> repeat until a final answer. Same backend tool routes
 (`app/api/tools/*`) serve both the agent and the human UI.
 
-Two tools are "tools that think": `draft_contribution_plan` (and the planned
-`draft_pr_description`) fetch GitHub data, then make their OWN server-side
-OpenAI call to synthesize guidance — distinct from the agent-loop call that
-chose them.
+`draft_contribution_plan` is a "tool that thinks": it fetches GitHub data, then
+makes its OWN server-side OpenAI call to synthesize the plan — distinct from the
+agent-loop call that chose it. The personalization tools (`set_skill_profile`,
+`get_skill_profile`, `get_recommendations`) and the tracker read/write the
+browser's localStorage, so memory survives refreshes with no backend.
 
 Key files:
-- `components/webmcp/ToolRegistry.tsx` — registers all 15 tools
+- `components/webmcp/ToolRegistry.tsx` — registers all 19 tools
 - `app/api/tools/*/route.ts` — tool implementations (real GitHub data)
 - `app/api/agent/route.ts` — OpenAI function-calling (server-side) + system prompt
 - `components/AgentChat.tsx` — chatbox + browser agent loop
@@ -170,18 +202,24 @@ Key files:
 ## 5. The contributor journey (the "better together" story)
 
 ```
+set_skill_profile ─┐
+                   ▼
 search / match_skills  →  estimate_first_response_time  →  find_issues
    →  check_issue_availability  →  assess_issue_difficulty  →  draft_contribution_plan  →  track_contribution
-      "is it free?"              "is it doable?"             "how do I start?"
+      "is it free?"              "is it doable?"             "how do I start?"        →  summarize_my_progress
 ```
 A human types one goal; the agent chains these to go from "I want to contribute"
 to a specific, available, doable issue in a responsive project — with a plan.
+Over time the app remembers the user (`set_skill_profile`) so `get_recommendations`
+can suggest work with no re-typing, and `summarize_my_progress` reflects on the
+journey so far. Everything the agent does also shows up in the human UI (skill
+graph, project cards, dashboard) — same data, driven either way.
 
 ---
 
 ## 6. Troubleshooting
 
-- **"missing_openai_key"** — `.env` still has `OPENAI_API_KEY=xy`, or server not
+- **"missing_openai_key"** — `.env.local` missing `OPENAI_API_KEY`, or server not
   restarted after adding the key.
 - **`document.modelContext` is `undefined`** — WebMCP flag off, or non-Chromium
   browser. Re-check step 0.
