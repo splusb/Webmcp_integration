@@ -31,12 +31,14 @@ interface VizState {
   // ---- Results shared between the agent and the search page ----
   /** Skills the current results were matched against (drives skill nodes). */
   skills: string[];
+  /** Experience level the agent used for the current results (drives the UI radio). */
+  experienceLevel: string;
   /** The current result set (drives cards + project nodes). */
   results: Project[];
   /** Monotonic token; bumped whenever the agent publishes new results. */
   resultsNonce: number;
-  /** Publish a fresh result set from an agent tool. */
-  publishResults: (skills: string[], results: Project[]) => void;
+  /** Publish a fresh result set from an agent tool. experienceLevel is optional. */
+  publishResults: (skills: string[], results: Project[], experienceLevel?: string) => void;
 
   // ---- Transient graph command ----
   command: GraphCommand;
@@ -49,18 +51,19 @@ interface VizState {
 const SESSION_KEY = "viz_shared_results";
 
 /** Read any persisted results (survives the navigation to /search). */
-function loadPersisted(): { skills: string[]; results: Project[] } {
-  if (typeof window === "undefined") return { skills: [], results: [] };
+function loadPersisted(): { skills: string[]; results: Project[]; experienceLevel: string } {
+  if (typeof window === "undefined") return { skills: [], results: [], experienceLevel: "" };
   try {
     const raw = sessionStorage.getItem(SESSION_KEY);
-    if (!raw) return { skills: [], results: [] };
+    if (!raw) return { skills: [], results: [], experienceLevel: "" };
     const parsed = JSON.parse(raw);
     return {
       skills: Array.isArray(parsed.skills) ? parsed.skills : [],
       results: Array.isArray(parsed.results) ? parsed.results : [],
+      experienceLevel: typeof parsed.experienceLevel === "string" ? parsed.experienceLevel : "",
     };
   } catch {
-    return { skills: [], results: [] };
+    return { skills: [], results: [], experienceLevel: "" };
   }
 }
 
@@ -68,17 +71,22 @@ const persisted = loadPersisted();
 
 export const useVizStore = create<VizState>((set) => ({
   skills: persisted.skills,
+  experienceLevel: persisted.experienceLevel,
   results: persisted.results,
   resultsNonce: persisted.results.length > 0 ? 1 : 0,
-  publishResults: (skills, results) => {
+  publishResults: (skills, results, experienceLevel) => {
+    const level = experienceLevel ?? "";
     if (typeof window !== "undefined") {
       try {
-        sessionStorage.setItem(SESSION_KEY, JSON.stringify({ skills, results }));
+        sessionStorage.setItem(
+          SESSION_KEY,
+          JSON.stringify({ skills, results, experienceLevel: level })
+        );
       } catch {
         /* ignore quota/serialization errors */
       }
     }
-    set((s) => ({ skills, results, resultsNonce: s.resultsNonce + 1 }));
+    set((s) => ({ skills, results, experienceLevel: level, resultsNonce: s.resultsNonce + 1 }));
   },
 
   command: { kind: "none" },
@@ -96,8 +104,8 @@ export const useVizStore = create<VizState>((set) => ({
  * callback — can drive the store too.
  */
 export const vizActions = {
-  publishResults: (skills: string[], results: Project[]) =>
-    useVizStore.getState().publishResults(skills, results),
+  publishResults: (skills: string[], results: Project[], experienceLevel?: string) =>
+    useVizStore.getState().publishResults(skills, results, experienceLevel),
   highlightProject: (query: string) => useVizStore.getState().highlightProject(query),
   focusSkill: (skill: string) => useVizStore.getState().focusSkill(skill),
   resetGraph: () => useVizStore.getState().resetGraph(),

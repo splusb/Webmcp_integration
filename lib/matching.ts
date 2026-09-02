@@ -86,13 +86,24 @@ export function buildSkillQuery(
     parts.push(`language:${skill.trim()}`);
   }
 
-  // Beginner-friendly repos need good first issues.
-  if (input.experienceLevel === "beginner") {
+  // Experience-level heuristic. GitHub search has no real "difficulty"
+  // qualifier, so this is a best-effort proxy using star size (project
+  // maturity/complexity) plus, for beginners, the presence of good first
+  // issues. For a precise per-issue difficulty judgment, use the
+  // assess_issue_difficulty tool.
+  if (input.experienceLevel === "senior") {
+    // Larger, established, more complex codebases; no hand-holding required.
+    parts.push("stars:>5000");
+  } else if (input.experienceLevel === "intermediate") {
+    // Solid, active projects in between.
+    parts.push("stars:>500");
+  } else {
+    // Beginner (or unspecified): approachable projects with beginner issues.
     parts.push("good-first-issues:>1");
+    parts.push("stars:>100");
   }
 
-  // Quality + recency floors.
-  parts.push("stars:>100");
+  // Recency floor for all levels.
   parts.push("pushed:>" + getDateMonthsAgo(3));
 
   return parts.join(" ");

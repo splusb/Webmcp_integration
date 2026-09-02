@@ -72,6 +72,7 @@ export default function SearchPage() {
   // navigation to /search, where the store rehydrates from sessionStorage).
   const sharedSkills = useVizStore((s) => s.skills);
   const sharedResults = useVizStore((s) => s.results);
+  const sharedExperience = useVizStore((s) => s.experienceLevel);
   const resultsNonce = useVizStore((s) => s.resultsNonce);
 
   useEffect(() => {
@@ -80,6 +81,11 @@ export default function SearchPage() {
       if (sharedSkills.length > 0) {
         setSelectedSkills(sharedSkills);
         setMode("skills");
+      }
+      // Sync the experience radio to whatever the agent used, so the UI filter
+      // reflects the agent's choice (e.g. "senior") instead of staying default.
+      if (sharedExperience) {
+        setExperience(sharedExperience);
       }
       setSearched(true);
     }

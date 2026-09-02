@@ -133,7 +133,7 @@ function registerAllTools() {
       // the agent's matches, then navigate there so the human sees the graph.
       if (data && Array.isArray(data.projects)) {
         const skills = Array.isArray(input?.skills) ? input.skills : [];
-        vizActions.publishResults(skills, data.projects);
+        vizActions.publishResults(skills, data.projects, input?.experienceLevel);
         goToSearch();
       }
       return data;
