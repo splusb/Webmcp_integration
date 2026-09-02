@@ -1,8 +1,14 @@
 "use client";
 
 import { useEffect } from "react";
-import { upsertTracked } from "@/lib/tracker";
+import { upsertTracked, summarizeProgress } from "@/lib/tracker";
 import { vizActions } from "@/lib/viz/vizStore";
+import {
+  readProfile,
+  updateProfile,
+  clearProfile,
+  removeFromProfile,
+} from "@/lib/profile";
 
 interface WebMCPTool {
   name: string;
@@ -90,7 +96,16 @@ function registerAllTools() {
         ? input.technologies.filter((t: unknown) => typeof t === "string" && t.trim().length > 0)
         : [];
       if (data && Array.isArray(data.projects) && skills.length > 0) {
-        vizActions.publishResults(skills, data.projects);
+        // Tag each project with the searched technologies as matchedSkills so
+        // the D3 graph draws skill->project edges (search-projects route does
+        // not set matchedSkills the way match-skills does). Give a default
+        // matchScore so edges are visible.
+        const tagged = data.projects.map((p: any) => ({
+          ...p,
+          matchedSkills: skills,
+          matchScore: typeof p.matchScore === "number" ? p.matchScore : 0.6,
+        }));
+        vizActions.publishResults(skills, tagged);
         goToSearch();
       }
       return data;
@@ -99,7 +114,7 @@ function registerAllTools() {
 
   registerTool({
     name: "match_skills_to_projects",
-    description: "PREFERRED tool when the user mentions one or more programming languages or skills (e.g. 'JavaScript and Python beginner projects'). Finds personalized project matches for the given skills and renders them in the on-screen skill graph. Pass every language/skill the user named in the 'skills' array and set experienceLevel from words like 'beginner'.",
+    description: "ALWAYS use this tool when the user names any programming language or skill — including phrasings like 'find me Python projects', 'JavaScript and Python beginner projects', 'show me Rust repos', or 'actually, find me Python projects'. This is the ONLY tool that populates the on-screen skill graph, so prefer it over search_projects whenever a language/skill is mentioned. Pass every language/skill the user named in the 'skills' array and set experienceLevel from words like 'beginner'.",
     inputSchema: {
       type: "object",
       properties: {
@@ -432,5 +447,176 @@ function registerAllTools() {
     },
   });
 
-  console.log("[WebMCP] All 15 tools registered successfully");
+  registerTool({
+    name: "summarize_my_progress",
+    description:
+      "Summarize the user's open-source contribution journey from their tracker. Returns totals per status, the tech stacks (languages) they use most, which merged project they closed fastest, average days-to-merge, when they started, and their completion rate. Use when the user asks things like 'how's my progress', 'what tech do I use most', 'which project did I close earliest', or 'summarize my contributions'.",
+    inputSchema: { type: "object", properties: {} },
+    execute: async () => {
+      const summary = summarizeProgress();
+      if (summary.total === 0) {
+        return {
+          success: true,
+          empty: true,
+          message:
+            "You have not tracked any contributions yet. Search for projects and track a few, then ask again.",
+        };
+      }
+      return { success: true, summary };
+    },
+  });
+
+  // --- Personalization: remember the user, then act on that memory --------
+
+  registerTool({
+    name: "set_skill_profile",
+    description:
+      "Update what the app remembers about the user: skills/languages, interests/domains, experience level, contribution types. ADD via skills/interests (they MERGE and de-duplicate, so 'also add Go' keeps prior skills). REMOVE specific items via removeSkills/removeInterests (e.g. 'drop Go' -> removeSkills: ['Go']) — this deletes only those items and keeps the rest. Classify a language/framework (Rust, React) as a skill and a domain/topic (developer tools, climate) as an interest. To wipe everything, set clear:true. Use for statements like 'remember I know Rust', 'add Go to my skills', 'drop Go', or 'forget my profile'.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        skills: { type: "array", items: { type: "string" }, description: "Languages/frameworks to ADD." },
+        interests: { type: "array", items: { type: "string" }, description: "Domains/topics to ADD." },
+        removeSkills: { type: "array", items: { type: "string" }, description: "Skills to REMOVE (e.g. ['Go'])." },
+        removeInterests: { type: "array", items: { type: "string" }, description: "Interests to REMOVE." },
+        experienceLevel: { type: "string", enum: ["beginner", "intermediate", "senior"] },
+        preferredContributionType: {
+          type: "array",
+          items: { type: "string", enum: ["code", "documentation", "testing", "design", "translation"] },
+        },
+        clear: { type: "boolean", description: "If true, forget the entire profile." },
+      },
+    },
+    execute: async (input) => {
+      if (input?.clear === true) {
+        clearProfile();
+        return { success: true, cleared: true, message: "Cleared your saved profile." };
+      }
+
+      // Removals first, so "add X and drop Y" in one turn behaves predictably.
+      const removeSkills = Array.isArray(input?.removeSkills) ? input.removeSkills : [];
+      const removeInterests = Array.isArray(input?.removeInterests) ? input.removeInterests : [];
+      if (removeSkills.length > 0 || removeInterests.length > 0) {
+        removeFromProfile({ skills: removeSkills, interests: removeInterests });
+      }
+
+      const hasAdditions =
+        (Array.isArray(input?.skills) && input.skills.length > 0) ||
+        (Array.isArray(input?.interests) && input.interests.length > 0) ||
+        input?.experienceLevel !== undefined ||
+        (Array.isArray(input?.preferredContributionType) &&
+          input.preferredContributionType.length > 0);
+
+      let profile = readProfile();
+      if (hasAdditions) {
+        profile = updateProfile({
+          skills: Array.isArray(input?.skills) ? input.skills : undefined,
+          interests: Array.isArray(input?.interests) ? input.interests : undefined,
+          experienceLevel: input?.experienceLevel ?? undefined,
+          preferredContributionType: Array.isArray(input?.preferredContributionType)
+            ? input.preferredContributionType
+            : undefined,
+        });
+      }
+
+      const removed = [...removeSkills, ...removeInterests];
+      const message =
+        removed.length > 0
+          ? `Updated. Removed ${removed.join(", ")}. Current skills: ${profile.skills.join(", ") || "none"}; interests: ${profile.interests.join(", ") || "none"}.`
+          : `Saved. Skills: ${profile.skills.join(", ") || "none"}; interests: ${profile.interests.join(", ") || "none"}.`;
+
+      return { success: true, profile, message };
+    },
+  });
+
+  registerTool({
+    name: "get_skill_profile",
+    description:
+      "Show the user what the app currently remembers about them: their saved skills, interests, experience level, and contribution preferences. Read-only — does NOT search or change anything. Use for questions like 'what skills have you logged for me?', 'what do you remember about me?', or 'show my profile'.",
+    inputSchema: { type: "object", properties: {} },
+    execute: async () => {
+      const profile = readProfile();
+      const empty =
+        profile.skills.length === 0 &&
+        profile.interests.length === 0 &&
+        !profile.experienceLevel;
+      if (empty) {
+        return {
+          success: true,
+          empty: true,
+          profile,
+          message:
+            "I haven't saved anything about you yet. Tell me your skills and interests (e.g. 'remember I know Rust and like developer tools').",
+        };
+      }
+      return {
+        success: true,
+        profile,
+        message: `Here's what I remember — skills: ${profile.skills.join(", ") || "none"}; interests: ${profile.interests.join(", ") || "none"}; experience: ${profile.experienceLevel || "unspecified"}.`,
+      };
+    },
+  });
+
+  registerTool({
+    name: "get_recommendations",
+    description:
+      "Recommend projects tailored to the user's SAVED profile (skills + interests), without them re-stating anything. Renders the matches in the on-screen skill graph and results, like match_skills_to_projects. Use for open-ended requests such as 'what should I work on?', 'recommend me some projects', or 'find me something new'. If the user names specific skills in THIS request, pass them in overrideSkills — an explicit request wins over the saved profile for this turn.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        overrideSkills: {
+          type: "array",
+          items: { type: "string" },
+          description: "Skills explicitly named in this request; these take precedence over the saved profile.",
+        },
+      },
+    },
+    execute: async (input) => {
+      const profile = readProfile();
+
+      // Edge case 3 — EXPLICIT REQUEST WINS: skills named in this turn override
+      // the saved profile for this call.
+      const override = Array.isArray(input?.overrideSkills)
+        ? input.overrideSkills.filter((s: unknown) => typeof s === "string" && s.trim().length > 0)
+        : [];
+      const skills = override.length > 0 ? override : profile.skills;
+
+      // Edge case 2 — EMPTY PROFILE: don't error; ask the user for skills.
+      if (skills.length === 0) {
+        return {
+          success: false,
+          needsProfile: true,
+          message:
+            "I don't know your skills yet. Tell me what you work with (e.g. 'remember I know Rust and like developer tools') and I'll recommend projects.",
+        };
+      }
+
+      const res = await fetch("/api/tools/match-skills", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          skills,
+          interests: profile.interests,
+          experienceLevel: profile.experienceLevel || undefined,
+          preferredContributionType: profile.preferredContributionType,
+        }),
+      });
+      const data = await res.json();
+
+      // Publish to the shared store so the graph + cards populate, then navigate.
+      if (data && Array.isArray(data.projects)) {
+        vizActions.publishResults(skills, data.projects);
+        goToSearch();
+      }
+
+      return {
+        success: true,
+        basedOn: override.length > 0 ? "explicit request" : "saved profile",
+        profile,
+        ...data,
+      };
+    },
+  });
+
+  console.log("[WebMCP] All 19 tools registered successfully");
 }

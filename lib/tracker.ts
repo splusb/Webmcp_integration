@@ -145,3 +145,128 @@ export function removeTracked(id: string) {
   writeTracked(next);
   return next;
 }
+
+/**
+ * Aggregate stats about the user's tracked contributions, computed purely from
+ * the tracker store. Consumed by the `summarize_my_progress` WebMCP tool so the
+ * agent can tell the user how their open-source journey is going.
+ */
+export interface ProgressSummary {
+  total: number;
+  statusCounts: Record<TrackStatus, number>;
+  /** Tech stacks (languages) ranked by how many tracked projects use them. */
+  topLanguages: { language: string; count: number }[];
+  /** The single most-used language, or null when none is recorded. */
+  mostUsedLanguage: string | null;
+  /** Projects that reached "merged", ordered by how quickly they got there. */
+  fastestMerged: {
+    fullName: string;
+    language: string;
+    /** Whole days between first tracked and last update. */
+    days: number;
+  }[];
+  /** Average days-to-merge across merged projects, or null when none merged. */
+  averageDaysToMerge: number | null;
+  /** The earliest-tracked project (start of the journey), or null when empty. */
+  firstTracked: { fullName: string; trackedAt: string } | null;
+  /** The most recently updated project, or null when empty. */
+  mostRecent: { fullName: string; updatedAt: string } | null;
+  /** Completion rate = merged / total, as a 0..1 fraction. */
+  completionRate: number;
+}
+
+const ALL_STATUSES: TrackStatus[] = [
+  "interested",
+  "in-progress",
+  "pr-submitted",
+  "merged",
+  "abandoned",
+];
+
+const DAY_MS = 1000 * 60 * 60 * 24;
+
+/** Whole days between two ISO timestamps (>= 0), or null if either is invalid. */
+function daysBetween(startIso: string, endIso: string): number | null {
+  const start = Date.parse(startIso);
+  const end = Date.parse(endIso);
+  if (Number.isNaN(start) || Number.isNaN(end)) return null;
+  return Math.max(0, Math.floor((end - start) / DAY_MS));
+}
+
+/**
+ * Compute a progress summary from the tracked-projects store. Pure and
+ * deterministic — pass an explicit list, or omit to read the live store.
+ */
+export function summarizeProgress(
+  projects: TrackedProject[] = readTracked()
+): ProgressSummary {
+  const statusCounts = ALL_STATUSES.reduce(
+    (acc, s) => {
+      acc[s] = 0;
+      return acc;
+    },
+    {} as Record<TrackStatus, number>
+  );
+
+  const languageCounts = new Map<string, number>();
+
+  for (const p of projects) {
+    if (p.status && statusCounts[p.status as TrackStatus] !== undefined) {
+      statusCounts[p.status as TrackStatus] += 1;
+    }
+    const lang = (p.language || "").trim();
+    if (lang) {
+      languageCounts.set(lang, (languageCounts.get(lang) ?? 0) + 1);
+    }
+  }
+
+  const topLanguages = Array.from(languageCounts.entries())
+    .map(([language, count]) => ({ language, count }))
+    .sort((a, b) => b.count - a.count || a.language.localeCompare(b.language));
+
+  const mostUsedLanguage = topLanguages.length > 0 ? topLanguages[0].language : null;
+
+  // Merged projects ranked by how quickly they went from tracked -> updated.
+  const merged = projects.filter((p) => p.status === "merged");
+  const fastestMerged = merged
+    .map((p) => ({
+      fullName: p.fullName || p.id,
+      language: p.language || "",
+      days: daysBetween(p.trackedAt, p.updatedAt) ?? 0,
+    }))
+    .sort((a, b) => a.days - b.days);
+
+  const averageDaysToMerge =
+    fastestMerged.length > 0
+      ? Math.round(
+          fastestMerged.reduce((sum, m) => sum + m.days, 0) / fastestMerged.length
+        )
+      : null;
+
+  // Earliest tracked (journey start) and most recently touched.
+  let firstTracked: ProgressSummary["firstTracked"] = null;
+  let mostRecent: ProgressSummary["mostRecent"] = null;
+  for (const p of projects) {
+    if (!firstTracked || Date.parse(p.trackedAt) < Date.parse(firstTracked.trackedAt)) {
+      firstTracked = { fullName: p.fullName || p.id, trackedAt: p.trackedAt };
+    }
+    if (!mostRecent || Date.parse(p.updatedAt) > Date.parse(mostRecent.updatedAt)) {
+      mostRecent = { fullName: p.fullName || p.id, updatedAt: p.updatedAt };
+    }
+  }
+
+  const total = projects.length;
+  const completionRate = total > 0 ? statusCounts.merged / total : 0;
+
+  return {
+    total,
+    statusCounts,
+    topLanguages,
+    mostUsedLanguage,
+    fastestMerged,
+    averageDaysToMerge,
+    firstTracked,
+    mostRecent,
+    completionRate,
+  };
+}
