@@ -160,6 +160,23 @@ function registerAllTools() {
   });
 
   registerTool({
+    name: "estimate_first_response_time",
+    description: "Estimate how responsive a project is to contributors by sampling recent closed pull requests: median time to first response (first comment/review from someone other than the PR author) and median time to merge. Returns a responsiveness rating. Use to judge whether a PR here is likely to be reviewed or ignored — pairs well with search_projects to find active AND responsive projects.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: { type: "string", description: "e.g. facebook/react" },
+        sampleSize: { type: "number", description: "How many recent closed PRs to sample (3-15, default 10)" },
+      },
+      required: ["projectId"],
+    },
+    execute: async (input) => {
+      const res = await fetch("/api/tools/estimate-first-response-time", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) });
+      return res.json();
+    },
+  });
+
+  registerTool({
     name: "explain_issue",
     description: "Get beginner-friendly explanation of an issue with context and suggested approach.",
     inputSchema: {
@@ -385,5 +402,5 @@ function registerAllTools() {
     },
   });
 
-  console.log("[WebMCP] All 13 tools registered successfully");
+  console.log("[WebMCP] All 14 tools registered successfully");
 }

@@ -122,6 +122,88 @@ export async function searchIssueReferencingPRs(
   }
 }
 
+export async function getRecentClosedPRs(
+  owner: string,
+  repo: string,
+  options: { perPage?: number } = {}
+) {
+  const cacheKey = `closedprs:${owner}/${repo}:${options.perPage || 10}`;
+  const cached = cache.get(cacheKey);
+  if (cached) return cached;
+
+  try {
+    const { data } = await octokit.pulls.list({
+      owner,
+      repo,
+      state: "closed",
+      sort: "updated",
+      direction: "desc",
+      per_page: options.perPage || 10,
+    });
+    cache.set(cacheKey, data, 3600); // 1 hour cache
+    return data;
+  } catch {
+    return [];
+  }
+}
+
+// Returns the timestamp (ISO string) of the first activity on a PR from
+// someone other than the author — a comment, a review, or a review comment —
+// or null if no non-author activity is found. Used to estimate how quickly a
+// project responds to contributions.
+export async function getPRFirstResponseAt(
+  owner: string,
+  repo: string,
+  prNumber: number,
+  authorLogin: string | null
+): Promise<string | null> {
+  const cacheKey = `prfirst:${owner}/${repo}#${prNumber}`;
+  const cached = cache.get(cacheKey);
+  if (cached !== undefined && cached !== null) return cached as string | null;
+
+  const candidates: string[] = [];
+  const notAuthor = (login?: string | null) =>
+    !!login && (!authorLogin || login !== authorLogin);
+
+  try {
+    // Issue-style comments on the PR
+    const { data: comments } = await octokit.issues.listComments({
+      owner,
+      repo,
+      issue_number: prNumber,
+      per_page: 30,
+    });
+    for (const c of comments as any[]) {
+      if (notAuthor(c.user?.login)) candidates.push(c.created_at);
+    }
+  } catch {
+    /* ignore */
+  }
+
+  try {
+    // Formal reviews (approve / request changes / comment)
+    const { data: reviews } = await octokit.pulls.listReviews({
+      owner,
+      repo,
+      pull_number: prNumber,
+      per_page: 30,
+    });
+    for (const r of reviews as any[]) {
+      if (notAuthor(r.user?.login) && r.submitted_at) candidates.push(r.submitted_at);
+    }
+  } catch {
+    /* ignore */
+  }
+
+  const first =
+    candidates.length > 0
+      ? candidates.sort((a, b) => new Date(a).getTime() - new Date(b).getTime())[0]
+      : null;
+
+  cache.set(cacheKey, first, 3600);
+  return first;
+}
+
 export async function getContributingGuide(owner: string, repo: string) {
   try {
     const { data } = await octokit.repos.getContent({
