@@ -55,6 +55,14 @@ function registerAllTools() {
     }
   };
 
+  // Navigate the human to the /dashboard page so agent-driven tracking /
+  // status changes are visible. Deferred so the tool result returns first.
+  const goToDashboard = () => {
+    if (typeof window !== "undefined" && window.location.pathname !== "/dashboard") {
+      setTimeout(() => window.location.assign("/dashboard"), 400);
+    }
+  };
+
   registerTool({
     name: "search_projects",
     description: "Search open-source projects by broad filters (domain, activity, stars) when the user does NOT name specific skills/languages. If the user names languages/skills, prefer match_skills_to_projects instead so the skill graph populates.",
@@ -265,7 +273,7 @@ function registerAllTools() {
 
   registerTool({
     name: "track_contribution",
-    description: "Save a project or issue to the user contribution tracker.",
+    description: "Track a project or issue in the contribution tracker, OR change the status of an already-tracked one. Provide projectId (owner/repo) and a status: interested, in-progress, pr-submitted, merged, or abandoned. Use for requests like track facebook/react, mark next.js as merged, or move it to in-progress. The change shows on the dashboard.",
     inputSchema: {
       type: "object",
       properties: {
@@ -305,9 +313,13 @@ function registerAllTools() {
         notes: input.notes,
       });
 
+      // Take the human to the dashboard so they see the tracking/status
+      // change land live. Deferred so this result returns to the agent first.
+      goToDashboard();
+
       return {
         success: true,
-        message: `Tracked ${id} as "${saved.status}". View it on your dashboard.`,
+        message: `Tracked ${id} as "${saved.status}". Opening your dashboard.`,
         contribution: saved,
         server: apiResult,
       };

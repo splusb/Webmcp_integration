@@ -53,9 +53,37 @@ function writeTracked(list: TrackedProject[]) {
 }
 
 /**
- * Upsert a tracked entry. If it already exists (same id), we update status /
- * notes / issueId and bump updatedAt; otherwise we create a new entry.
- * Partial project metadata is fine — the agent often only knows the projectId.
+ * Normalize a project identifier for fuzzy matching. The agent doesn't always
+ * reproduce the exact stored id (e.g. "Auto-GPT" vs "AutoGPT", different case,
+ * or "autogpt" without the owner), which would otherwise create a duplicate
+ * tracker entry. We compare on a normalized key: lowercased, hyphens/dots/
+ * underscores stripped, and — for owner/repo strings — the repo portion.
+ */
+function normalizeKey(id: string): string {
+  if (!id) return "";
+  const base = id.split("#")[0]; // drop any #issue suffix
+  const repo = base.includes("/") ? base.split("/").pop()! : base;
+  return repo.toLowerCase().replace(/[-_.\s]/g, "");
+}
+
+/**
+ * Find an existing tracked entry that matches `id` either exactly or fuzzily
+ * (same normalized repo key). Exact matches win; otherwise the first normalized
+ * match is returned.
+ */
+function findExisting(list: TrackedProject[], id: string): TrackedProject | undefined {
+  const exact = list.find((p) => p.id === id);
+  if (exact) return exact;
+  const key = normalizeKey(id);
+  if (!key) return undefined;
+  return list.find((p) => normalizeKey(p.id) === key || normalizeKey(p.fullName) === key);
+}
+
+/**
+ * Upsert a tracked entry. If it already exists (matched exactly OR fuzzily by
+ * normalized repo name), we update status / notes / issueId and bump updatedAt;
+ * otherwise we create a new entry. Partial project metadata is fine — the agent
+ * often only knows the projectId.
  */
 export function upsertTracked(
   entry: {
@@ -67,7 +95,7 @@ export function upsertTracked(
 ): TrackedProject {
   const list = readTracked();
   const now = new Date().toISOString();
-  const existing = list.find((p) => p.id === entry.id);
+  const existing = findExisting(list, entry.id);
 
   if (existing) {
     if (entry.status) existing.status = entry.status;
