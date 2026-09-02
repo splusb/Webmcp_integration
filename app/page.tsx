@@ -50,8 +50,10 @@ export default function Home() {
         <div className="mt-16 rounded-xl border bg-blue-50 p-6">
           <h3 className="text-lg font-semibold text-blue-900">AI Agent Ready</h3>
           <p className="mt-2 text-sm text-blue-800">
-            This app exposes 8 WebMCP tools. Open it in ChatGPT browser or Chrome with WebMCP enabled,
-            and your AI agent can search projects, find issues, and track contributions for you.
+            This app exposes 13 WebMCP tools. Use the built-in &ldquo;Ask the Agent&rdquo; chat, or open
+            the app in a WebMCP-enabled browser, and an AI agent can search projects, find issues,
+            assess their difficulty, check if they&rsquo;re available, visualize matches, and track
+            contributions for you.
           </p>
         </div>
       </div>

@@ -71,6 +71,57 @@ export async function getIssueDetail(owner: string, repo: string, issueNumber: n
   return data;
 }
 
+export async function getIssueComments(
+  owner: string,
+  repo: string,
+  issueNumber: number,
+  options: { perPage?: number } = {}
+) {
+  const cacheKey = `comments:${owner}/${repo}#${issueNumber}`;
+  const cached = cache.get(cacheKey);
+  if (cached) return cached;
+
+  try {
+    const { data } = await octokit.issues.listComments({
+      owner,
+      repo,
+      issue_number: issueNumber,
+      per_page: options.perPage || 30,
+    });
+    cache.set(cacheKey, data, 900); // 15 min cache
+    return data;
+  } catch {
+    return [];
+  }
+}
+
+export async function searchIssueReferencingPRs(
+  owner: string,
+  repo: string,
+  issueNumber: number
+) {
+  const cacheKey = `refprs:${owner}/${repo}#${issueNumber}`;
+  const cached = cache.get(cacheKey);
+  if (cached) return cached;
+
+  try {
+    // Open PRs in this repo that mention the issue number (e.g. "Fixes #123").
+    const q = `repo:${owner}/${repo} is:pr is:open ${issueNumber} in:body`;
+    const { data } = await octokit.search.issuesAndPullRequests({
+      q,
+      per_page: 10,
+    });
+    // Filter to items that actually reference the exact issue number, and are PRs.
+    const prs = (data.items || []).filter(
+      (it: any) => it.pull_request && it.number !== issueNumber
+    );
+    cache.set(cacheKey, prs, 900); // 15 min cache
+    return prs;
+  } catch {
+    return [];
+  }
+}
+
 export async function getContributingGuide(owner: string, repo: string) {
   try {
     const { data } = await octokit.repos.getContent({

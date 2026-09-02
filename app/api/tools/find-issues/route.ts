@@ -16,18 +16,51 @@ export async function POST(req: NextRequest) {
     }
 
     const labels = input.labels?.join(",") || (input.difficulty === "good-first-issue" ? "good first issue" : undefined);
-    const issues = await getIssues(owner, repo, { labels });
 
-    let filtered = issues.filter((issue: any) => !issue.pull_request);
+    // Apply the caller's filters. Returns the filtered issue list.
+    const applyFilters = (
+      issues: any[],
+      opts: { excludeAssigned: boolean; excludeStale: boolean }
+    ) => {
+      let out = issues.filter((issue: any) => !issue.pull_request);
+      if (opts.excludeAssigned) {
+        out = out.filter((issue: any) => !issue.assignee);
+      }
+      if (opts.excludeStale) {
+        const ninetyDaysAgo = new Date();
+        ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+        out = out.filter((issue: any) => new Date(issue.updated_at) > ninetyDaysAgo);
+      }
+      return out;
+    };
 
-    if (input.excludeAssigned !== false) {
-      filtered = filtered.filter((issue: any) => !issue.assignee);
+    const wantExcludeAssigned = input.excludeAssigned !== false;
+    const wantExcludeStale = input.excludeStale !== false;
+
+    // First pass: with labels + the caller's filters.
+    let issues = await getIssues(owner, repo, { labels });
+    let filtered = applyFilters(issues, {
+      excludeAssigned: wantExcludeAssigned,
+      excludeStale: wantExcludeStale,
+    });
+    let relaxed = false;
+
+    // Fallback: if the label filter produced nothing, retry without labels.
+    if (filtered.length === 0 && labels) {
+      issues = await getIssues(owner, repo, {});
+      filtered = applyFilters(issues, {
+        excludeAssigned: wantExcludeAssigned,
+        excludeStale: wantExcludeStale,
+      });
+      relaxed = true;
     }
 
-    if (input.excludeStale !== false) {
-      const ninetyDaysAgo = new Date();
-      ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
-      filtered = filtered.filter((issue: any) => new Date(issue.updated_at) > ninetyDaysAgo);
+    // Fallback: if still empty (e.g. a heavily-triaged repo where the first
+    // page of issues is all assigned/stale), relax those filters so we return
+    // real issues instead of a misleading "no issues" result.
+    if (filtered.length === 0) {
+      filtered = applyFilters(issues, { excludeAssigned: false, excludeStale: false });
+      relaxed = true;
     }
 
     const result = filtered.map((issue: any) => ({
@@ -44,7 +77,14 @@ export async function POST(req: NextRequest) {
       body: issue.body?.substring(0, 500) || "",
     }));
 
-    return NextResponse.json({ issues: result, totalCount: result.length });
+    return NextResponse.json({
+      issues: result,
+      totalCount: result.length,
+      // true when default filters (label / assigned / stale) were relaxed to
+      // avoid returning an empty list. The agent should then verify each issue
+      // with check_issue_availability, since some may be assigned or claimed.
+      relaxedFilters: relaxed,
+    });
   } catch (error: any) {
     return NextResponse.json(
       { error: { code: "ISSUES_FETCH_FAILED", message: error.message } },

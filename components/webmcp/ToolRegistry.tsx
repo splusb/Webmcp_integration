@@ -178,6 +178,41 @@ function registerAllTools() {
   });
 
   registerTool({
+    name: "assess_issue_difficulty",
+    description: "Assess whether an issue is realistically doable for a given experience level, beyond its label. Analyzes comment volume, age, description detail, keywords, and assignment/claim signals to return a difficulty score, reasons, and red flags (taken, contentious, stale). Use after find_issues to filter to genuinely doable issues.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: { type: "string", description: "e.g. facebook/react" },
+        issueId: { type: "string", description: "The issue number" },
+        experienceLevel: { type: "string", enum: ["beginner", "intermediate", "senior"], default: "beginner" },
+      },
+      required: ["projectId", "issueId"],
+    },
+    execute: async (input) => {
+      const res = await fetch("/api/tools/assess-issue-difficulty", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) });
+      return res.json();
+    },
+  });
+
+  registerTool({
+    name: "check_issue_availability",
+    description: "Check whether an issue is free to work on: is it assigned, has someone claimed it in a recent comment, or is there already an open PR referencing it? Returns available | likely-taken | taken with evidence. Use after find_issues, before a user commits time to an issue, to avoid duplicate work.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: { type: "string", description: "e.g. facebook/react" },
+        issueId: { type: "string", description: "The issue number" },
+      },
+      required: ["projectId", "issueId"],
+    },
+    execute: async (input) => {
+      const res = await fetch("/api/tools/check-issue-availability", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) });
+      return res.json();
+    },
+  });
+
+  registerTool({
     name: "check_contribution_requirements",
     description: "Get contribution requirements including CLA, code style, testing, and PR process.",
     inputSchema: {
@@ -350,5 +385,5 @@ function registerAllTools() {
     },
   });
 
-  console.log("[WebMCP] All 11 tools registered successfully");
+  console.log("[WebMCP] All 13 tools registered successfully");
 }
