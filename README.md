@@ -39,10 +39,12 @@ Agents handle discovery, filtering, summarization, and explanation. Humans make 
 
 WebMCP enables websites to expose structured tools that AI agents can use directly. Instead of agents guessing how to navigate UI, we define exactly what they can do.
 
-- **8 Structured Tools** exposed for comprehensive agent interaction
-- **Composable Operations**: Tools chain naturally (search -> summarize -> find issues -> explain)
+- **15 Structured Tools** exposed for comprehensive agent interaction
+- **Composable Operations**: Tools chain naturally (search -> estimate responsiveness -> find issues -> check availability -> assess difficulty -> plan)
 - **Type-Safe Inputs**: Schema-validated parameters prevent errors
 - **Rich Outputs**: Structured responses agents can reason about
+- **In-App Agent**: A built-in "Ask the Agent" chatbox (OpenAI) reads these tools and calls them for the user — no external agent browser required
+- **Agent-Driven Visualization**: Some tools change what the human sees on screen (skill graph), so people and agents work on the same live page
 
 ---
 
@@ -73,7 +75,7 @@ DATA LAYER
 ### Component Details
 
 #### 1. WebMCP Interface Layer
-- Exposes 8 structured tools to AI agents
+- Exposes 15 structured tools to AI agents
 - Handles input validation via JSON Schema
 - Routes tool calls to appropriate service handlers
 
@@ -98,16 +100,46 @@ DATA LAYER
 
 ### Tool Overview
 
+**Discovery & project vetting**
+
 | Tool | Purpose | Key Parameters |
 |------|---------|----------------|
 | `search_projects` | Find projects by criteria | technologies, domain, difficulty |
-| `match_skills_to_projects` | Personalized recommendations | skills, interests, experience |
-| `find_issues` | Discover contribution opportunities | projectId, labels, difficulty |
+| `match_skills_to_projects` | Personalized recommendations (+ skill graph) | skills, interests, experience |
 | `summarize_project` | Get project overview | projectId, includeContributionGuide |
-| `explain_issue` | Understand an issue deeply | issueId, detailLevel |
+| `estimate_first_response_time` | How responsive a project is to PRs | projectId, sampleSize |
 | `check_contribution_requirements` | Get contribution checklist | projectId |
-| `track_contribution` | Save progress | projectId, issueId, status |
 | `get_mentorship_projects` | Find mentorship programs | program, year |
+
+**Issue vetting**
+
+| Tool | Purpose | Key Parameters |
+|------|---------|----------------|
+| `find_issues` | Discover contribution opportunities | projectId, labels, difficulty |
+| `check_issue_availability` | Is it free? available / likely-taken / taken | projectId, issueId |
+| `assess_issue_difficulty` | Real difficulty beyond the label | projectId, issueId, experienceLevel |
+| `explain_issue` | Understand an issue deeply | issueId, detailLevel |
+
+**Action / guidance**
+
+| Tool | Purpose | Key Parameters |
+|------|---------|----------------|
+| `draft_contribution_plan` | AI-synthesized step-by-step first-contribution plan | projectId, issueId, experienceLevel |
+| `track_contribution` | Save progress | projectId, issueId, status |
+
+**Visualization (agent drives the on-screen skill graph)**
+
+| Tool | Purpose | Key Parameters |
+|------|---------|----------------|
+| `highlight_project` | Glow a project node in the graph | project (name or superlative) |
+| `focus_skill` | Focus the graph on one skill | skill |
+| `reset_graph` | Restore the full graph | — |
+
+> The `## Tool Specifications` below show detailed schemas for the original
+> eight tools. The seven newer tools (`estimate_first_response_time`,
+> `check_issue_availability`, `assess_issue_difficulty`,
+> `draft_contribution_plan`, `highlight_project`, `focus_skill`, `reset_graph`)
+> follow the same registration pattern — see `components/webmcp/ToolRegistry.tsx`.
 
 ### Tool Specifications
 
@@ -348,11 +380,13 @@ document.modelContext.registerTool({
 
 | Feature | Description |
 |---------|-------------|
-| **8 Structured Tools** | Complete coverage of discovery to contribution flow |
+| **15 Structured Tools** | Complete coverage of discovery to contribution flow |
 | **Smart Matching** | AI-ready skill-to-project matching |
+| **Issue Vetting** | Difficulty, availability, and responsiveness signals beyond raw labels |
+| **AI-Synthesized Plans** | `draft_contribution_plan` turns repo docs into concrete first steps |
 | **Rich Context** | Detailed explanations agents can relay to users |
 | **Composable Operations** | Tools designed to chain naturally |
-| **Stateful Tracking** | Maintain context across sessions |
+| **Agent-Driven UI** | Visualization tools let the agent change what the human sees live |
 
 ---
 
@@ -468,23 +502,26 @@ Result: Complete contributor onboarding package
 - **Next.js 14** - React framework with App Router
 - **TypeScript** - Type safety
 - **Tailwind CSS** - Styling
-- **shadcn/ui** - UI components
-- **React Query** - Data fetching and caching
+- **React Query / Zustand** - Data fetching and client state
+- **react-markdown** - Renders the agent's markdown replies
+- **D3 / React Flow** - Skill-graph visualization
 
 ### Backend
 - **Next.js API Routes** - Backend endpoints for WebMCP tool execution
-- **OpenAI API** - Powers the in-app agent (server-side function calling)
-- **In-memory cache** - Reduces GitHub API calls (1hr projects, 15min issues)
-- **localStorage** - Client-side contribution tracking (no login required)
+- **OpenAI API** - Powers both the in-app agent (function calling) and the
+  AI-synthesis tools like `draft_contribution_plan`
+- **In-memory cache** (`lib/cache.ts`) - Reduces GitHub API calls (1hr projects, 15min issues)
+- **localStorage** (`lib/tracker.ts`) - Client-side contribution tracking (no login required)
 
 ### External APIs
-- **GitHub REST API** - Primary data source
-- **GitHub GraphQL API** - Complex queries
+- **GitHub REST API** (via Octokit) - Primary data source (GitHub only)
 
 ### Deployment
-- **Vercel / Cloudflare Pages** - Hosting
-- **Vercel KV / Upstash Redis** - Caching
-- **Vercel Postgres / Neon** - Database
+- **Vercel** - Hosting (suggested)
+
+> Note: earlier drafts mentioned Redis, PostgreSQL, GitHub GraphQL, and shadcn/ui.
+> The current implementation uses an in-memory cache, localStorage, the GitHub
+> REST API, and Tailwind — those others are potential future enhancements.
 
 ---
 
@@ -531,15 +568,21 @@ Result: Complete contributor onboarding package
 │       ├── agent/route.ts               # OpenAI agent (server-side brain)
 │       └── tools/
 │           ├── search-projects/route.ts
-│           ├── find-issues/route.ts
-│           ├── summarize-project/route.ts
 │           ├── match-skills/route.ts
+│           ├── summarize-project/route.ts
+│           ├── estimate-first-response-time/route.ts
+│           ├── find-issues/route.ts
+│           ├── check-issue-availability/route.ts
+│           ├── assess-issue-difficulty/route.ts
 │           ├── explain-issue/route.ts
+│           ├── draft-contribution-plan/route.ts   # "tool that thinks" (calls OpenAI)
 │           ├── contribution-requirements/route.ts
 │           ├── track-contribution/route.ts
 │           └── mentorship-projects/route.ts
+│           # (visualization tools highlight/focus/reset run in the browser,
+│           #  no backend route — see ToolRegistry.tsx + lib/viz)
 ├── components/
-│   ├── webmcp/ToolRegistry.tsx          # Registers the 8 WebMCP tools
+│   ├── webmcp/ToolRegistry.tsx          # Registers all 15 WebMCP tools
 │   ├── AgentChat.tsx                    # In-app agent chat (browser hands)
 │   ├── MarkdownMessage.tsx              # Renders agent markdown replies
 │   └── ProjectCard.tsx                  # Project result card + Track button
@@ -561,10 +604,14 @@ Result: Complete contributor onboarding package
 
 import { useEffect } from "react";
 
+// Module-level guard: React Strict Mode mounts twice in dev; register once.
+let toolsRegistered = false;
+
 export function WebMCPToolRegistry() {
   useEffect(() => {
-    if (typeof document !== "undefined" && "modelContext" in document) {
+    if (typeof document !== "undefined" && document.modelContext && !toolsRegistered) {
       registerAllTools();
+      toolsRegistered = true;
     }
   }, []);
 
@@ -572,14 +619,13 @@ export function WebMCPToolRegistry() {
 }
 
 function registerAllTools() {
-  registerSearchProjects();
-  registerMatchSkills();
-  registerFindIssues();
-  registerSummarizeProject();
-  registerExplainIssue();
-  registerContributionRequirements();
-  registerTrackContribution();
-  registerMentorshipProjects();
+  // All 15 tools are registered here via an idempotent registerTool() wrapper
+  // (unregisters a same-named tool first to survive hot-reloads):
+  //   search_projects, match_skills_to_projects, summarize_project,
+  //   estimate_first_response_time, find_issues, check_issue_availability,
+  //   assess_issue_difficulty, explain_issue, draft_contribution_plan,
+  //   check_contribution_requirements, track_contribution,
+  //   get_mentorship_projects, highlight_project, focus_skill, reset_graph
 }
 ```
 
@@ -616,9 +662,14 @@ Development: http://localhost:3000/api/tools
 
 ## Demo Flow
 
+> For a full, up-to-date, step-by-step demo script (setup, browser flag, and the
+> exact prompts to run), see **[DEMO.md](DEMO.md)**.
+
 ### Recommended Demo Script (3 minutes)
 
-**Setup**: Open the app in ChatGPT browser
+**Setup**: Open the app in a WebMCP-enabled browser (Edge/Chrome 150+ with the
+"WebMCP for testing" flag) and use the built-in **"Ask the Agent"** chatbox — no
+external agent browser required.
 
 **Scene 1 - Introduction (30s)**
 
