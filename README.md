@@ -34,6 +34,28 @@ You ask in plain language through the **Agent Chatbox**. The **AI Agent** decide
 
 ---
 
+## Screenshots
+
+**1. The agent remembers you** — tell it your skills once (`set_skill_profile`).
+![Home + set profile](docs/screenshots/01-home-set-profile.png)
+
+**2. Skill → project graph** — the agent matches projects to your skills and renders them as a live graph (`match_skills_to_projects`).
+![Skill match graph](docs/screenshots/02-skill-match-graph.png)
+
+**3. The agent drives the UI** — ask it to highlight a project and the graph node glows (`highlight_project`).
+![Highlight project](docs/screenshots/03-highlight-project.png)
+
+**4. Vet and track an issue** — check availability + requirements, then save it to your dashboard (`check_issue_availability`, `check_contribution_requirements`, `track_contribution`).
+![Track and requirements](docs/screenshots/04-track-and-requirements.png)
+
+**5. Contribution dashboard** — a visual journey of your tracked projects.
+![Dashboard](docs/screenshots/05-dashboard-responsiveness.png)
+
+**6. Will my PR get reviewed?** — the agent samples recent PRs for real response and merge times (`estimate_first_response_time`).
+![Responsiveness result](docs/screenshots/06-responsiveness-result.png)
+
+---
+
 ## What you can do
 
 **Ask the agent things like:**
