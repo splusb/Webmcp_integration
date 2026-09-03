@@ -4,6 +4,9 @@
 >
 > Built for the WebMCP Challenge: an app that gets better when a person *and* their agent use it together.
 
+🔗 **Live app (hosted):** https://webmcp-integration.vercel.app/
+_(The human UI works in any browser. To use the AI agent, open it in a WebMCP-enabled browser — see [Run it locally → step 3](#run-it-locally).)_
+
 Finding your first (or next) open-source contribution is tedious: searching repos, vetting issues, checking if a project even reviews PRs. This app turns that into a conversation. You talk to an AI agent in plain language, and it does the digging — while you watch the results appear as an interactive skill graph and a contribution tracker.
 
 It's built on **WebMCP**: the app exposes a set of tools that an AI agent can call directly in the browser. Humans and the agent work on the same screen, at the same time.
@@ -20,6 +23,14 @@ Without WebMCP, an agent has to *guess* its way through a website — scraping t
 ## Better together
 
 The split is deliberate: the **agent** does the tedious, repetitive work no human wants to do by hand (scanning dozens of repos and issues, reading comment threads, sampling PR timings), and the **human** makes the judgment calls (which project feels right, which issue to commit to). Neither is as good alone — together, "I want to contribute" becomes a concrete, vetted plan in minutes.
+
+## Architecture
+
+<p align="center">
+  <img src="docs/architecture.png" alt="DiscoveryHub architecture" width="640" />
+</p>
+
+You ask in plain language through the **Agent Chatbox**. The **AI Agent** decides which of the **19 tools** to use and calls them; tools update the **live app** (skill graph, dashboard), read and write **your saved profile**, and reach out to **data sources** (GitHub, OpenAI) as needed. The AI key stays server-side, and tools run in your browser — so the agent can act reliably and even change what you see on screen.
 
 ---
 
